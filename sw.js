@@ -1,6 +1,6 @@
 // Sorgt dafür, dass die App auch ohne Internet startet.
 // Bei einer neuen Version die Nummer hochzählen.
-const CACHE = 'gym-v1';
+const CACHE = 'gym-v2';
 const FILES = ['./', './index.html', './manifest.json', './icon-180.png', './icon-512.png'];
 
 self.addEventListener('install', e => {

@@ -66,6 +66,41 @@ b{font-weight:600}
 .mt{background:var(--bg-neutral);border-radius:var(--radius);padding:10px}
 .ic{display:flex;gap:16px;font-size:20px;color:var(--text-secondary)}
 .ic i.on{color:var(--text-accent)}
+
+/* Animationen */
+@keyframes up{from{opacity:0;transform:translateY(12px)}}
+@keyframes pop{0%{transform:scale(1)}40%{transform:scale(1.25)}100%{transform:scale(1)}}
+@keyframes flash{0%{background:var(--bg-success)}100%{background:transparent}}
+@keyframes grow{from{width:0}}
+@keyframes growH{from{height:0}}
+@keyframes drop{from{opacity:0;transform:translateY(-14px) scale(.96)}}
+@keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.025)}}
+@keyframes glow{0%{border-color:var(--fill-success);background:var(--bg-success)}100%{border-color:var(--border-success)}}
+@keyframes bounce{0%{transform:scale(.3);opacity:0}60%{transform:scale(1.12);opacity:1}100%{transform:scale(1)}}
+@keyframes wiggle{0%,100%{transform:rotate(0)}25%{transform:rotate(-14deg)}75%{transform:rotate(14deg)}}
+#v.enter>*{animation:up .4s cubic-bezier(.2,.8,.2,1) both}
+#v.enter>*:nth-child(2){animation-delay:.05s}
+#v.enter>*:nth-child(3){animation-delay:.1s}
+#v.enter>*:nth-child(4){animation-delay:.15s}
+#v.enter>*:nth-child(5){animation-delay:.2s}
+#v.enter>*:nth-child(6){animation-delay:.25s}
+#v.enter>*:nth-child(n+7){animation-delay:.3s}
+.enter .gw{animation:grow .9s cubic-bezier(.2,.8,.2,1) .2s both}
+.enter .gh{animation:growH .9s cubic-bezier(.2,.8,.2,1) .2s both}
+.enter .dc{animation:bounce .5s cubic-bezier(.2,.8,.2,1) both}
+.ck.pop{animation:pop .35s ease}
+.sr.fl{animation:flash 1s ease;border-radius:var(--radius)}
+.cd.cele{animation:glow 1.4s ease}
+.rc-in{animation:drop .4s cubic-bezier(.2,.8,.2,1)}
+.hot{animation:pulse 1s ease-in-out infinite}
+#rr{transition:stroke-dashoffset 1s linear,stroke .4s}
+#pb{transition:width .5s cubic-bezier(.2,.8,.2,1)}
+.nv button.on i{animation:pop .3s ease}
+.trophy{animation:bounce .7s cubic-bezier(.2,.8,.2,1) .1s both}
+.rdone{animation:bounce .5s cubic-bezier(.2,.8,.2,1)}
+.rdone i{display:inline-block;animation:wiggle .5s ease 3}
+button,.cl{transition:transform .1s}
+@media (prefers-reduced-motion: reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
 </style>
 </head>
 <body>
@@ -119,6 +154,9 @@ function save(){
 if (navigator.storage && navigator.storage.persist) navigator.storage.persist();
 
 let tab = 'train', sub = null, err = '', sum = null, conf = '', msg = '';
+// Zustände nur für Animationen
+let lastKey = '', flash = null, cele = null, restNew = false, restDone = 0, lastProg = 0;
+const RM = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 // ---------- Hilfsfunktionen ----------
 const $ = id => document.getElementById(id);
@@ -160,7 +198,7 @@ const newSet = () => ({w:'', r:'', d:false, wu:false});
 function start(pi){
   act = {p: pi<0 ? 'Freies Training' : plans[pi].n, t0: Date.now(),
     x: pi<0 ? [] : plans[pi].it.map(i => ({e:i.e, tr:i.r, t:i.s+' × '+i.r, ui:'', s:Array.from({length:i.s}, newSet)}))};
-  tab='train'; conf=''; render();
+  tab='train'; conf=''; lastProg=0; render();
 }
 function setv(i,j,k,v){
   act.x[i].s[j][k] = v; save();
@@ -183,6 +221,8 @@ function tick(i,j){
     if (s.r==='' && h.r!==null) s.r=h.r;
     if (num(s.w)===null || num(s.r)===null){ err=i+'-'+j; render(); return; }
     s.d=true; rest=Date.now()+REST*1000;
+    flash=i+'-'+j; restNew=true; restDone=0;
+    if (act.x[i].s.every(z => z.d)) cele=i;
   } else s.d=false;
   err=''; render();
 }
@@ -193,6 +233,11 @@ function addSet(i){ act.x[i].s.push(newSet()); render(); }
 function addEx(){ act.x.push({e:+$('ae').value, tr:null, t:'', ui:'', s:[newSet(),newSet(),newSet()]}); render(); }
 function rmEx(i){ act.x.splice(i,1); render(); }
 function radj(d){ rest = d===0 ? 0 : Math.max(Date.now()+1000, rest+d*1000); render(); }
+function nextLabel(){
+  const nu=nextUp(); if (!nu) return 'Alle Sätze erledigt';
+  const y=act.x[nu.i], h=ph(nu.i,nu.j);
+  return `${esc(ex[y.e].n)} · Satz ${nu.j+1}${h.w!==null?' · '+nf(h.w)+' kg':''}${h.r?' × '+h.r:''}`;
+}
 function nextUp(){ if (!act) return null; for (let i=0;i<act.x.length;i++) for (let j=0;j<act.x[i].s.length;j++) if (!act.x[i].s[j].d) return {i,j}; return null; }
 function finish(){
   const x = act.x.map(y => ({e:y.e, s:y.s.filter(s => s.d && !s.wu).map(s => ({w:num(s.w), r:num(s.r)}))})).filter(y => y.s.length);
@@ -210,15 +255,18 @@ function banner(){ return act ? `<div class="cd cl" onclick="go('train')" style=
 function vTrain(){
   if (act){
     const all=act.x.flatMap(y => y.s), tot=all.length, dn=all.filter(s => s.d).length, nu=nextUp();
-    let o = `<div style="display:flex;justify-content:space-between" class="mu"><span>${dn} von ${tot} Sätzen</span><span>${nf(all.filter(s => s.d && !s.wu).reduce((b,s) => b+num(s.w)*num(s.r), 0))} kg Volumen</span></div><div class="bar" style="margin:6px 0 12px"><div style="width:${tot?Math.round(dn/tot*100):0}%;background:var(--fill-success)"></div></div>`;
+    const pct = tot ? Math.round(dn/tot*100) : 0;
+    let o = `<div style="display:flex;justify-content:space-between" class="mu"><span>${dn} von ${tot} Sätzen</span><span>${nf(all.filter(s => s.d && !s.wu).reduce((b,s) => b+num(s.w)*num(s.r), 0))} kg Volumen</span></div><div class="bar" style="margin:6px 0 12px"><div id="pb" data-to="${pct}" style="width:${lastProg}%;background:var(--fill-success)"></div></div>`;
     if (rest>Date.now()){
-      const rem=(rest-Date.now())/1000; let nx='Alle Sätze erledigt';
-      if (nu){ const y=act.x[nu.i], h=ph(nu.i,nu.j); nx = `${esc(ex[y.e].n)} · Satz ${nu.j+1}${h.w!==null?' · '+nf(h.w)+' kg':''}${h.r?' × '+h.r:''}`; }
-      o += `<div class="cd" style="background:var(--bg-accent);border-color:var(--border-accent)"><div style="display:flex;gap:14px;align-items:center"><svg width="72" height="72" viewBox="0 0 72 72"><circle cx="36" cy="36" r="30" fill="none" stroke="var(--border-accent)" stroke-width="6"/><circle id="rr" cx="36" cy="36" r="30" fill="none" stroke="#378ADD" stroke-width="6" stroke-linecap="round" stroke-dasharray="${C}" stroke-dashoffset="${C*(1-rem/REST)}" transform="rotate(-90 36 36)"/><text id="rt" x="36" y="41" text-anchor="middle" style="font-size:16px;font-weight:600;fill:var(--text-accent)">${mm(rem)}</text></svg><div style="flex:1;color:var(--text-accent)"><div style="font-size:12px">Als Nächstes</div><div style="font-size:14px;font-weight:600">${nx}</div></div></div><div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-top:8px"><button onclick="radj(-30)">−30 s</button><button onclick="radj(30)">+30 s</button><button onclick="radj(0)">Weiter</button></div></div>`;
+      const rem=(rest-Date.now())/1000, hot=rem<=10;
+      o += `<div id="rc" class="cd ${restNew?'rc-in':''}" style="background:var(--bg-accent);border-color:var(--border-accent)"><div style="display:flex;gap:14px;align-items:center"><svg id="rs" class="${hot?'hot':''}" width="72" height="72" viewBox="0 0 72 72"><circle cx="36" cy="36" r="30" fill="none" stroke="var(--border-accent)" stroke-width="6"/><circle id="rr" cx="36" cy="36" r="30" fill="none" stroke="${hot?'#EF9F27':'#378ADD'}" stroke-width="6" stroke-linecap="round" stroke-dasharray="${C}" stroke-dashoffset="${C*(1-rem/REST)}" transform="rotate(-90 36 36)"/><text id="rt" x="36" y="41" text-anchor="middle" style="font-size:16px;font-weight:600;fill:var(--text-accent)">${mm(rem)}</text></svg><div style="flex:1;color:var(--text-accent)"><div style="font-size:12px">Als Nächstes</div><div style="font-size:14px;font-weight:600">${nextLabel()}</div></div></div><div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-top:8px"><button onclick="radj(-30)">−30 s</button><button onclick="radj(30)">+30 s</button><button onclick="radj(0)">Weiter</button></div></div>`;
+    } else if (Date.now()-restDone < 4000){
+      // kurz anzeigen, dass die Pause vorbei ist
+      o += `<div class="cd rdone" style="background:var(--bg-success);border-color:var(--border-success);color:var(--text-success);display:flex;gap:12px;align-items:center"><i class="ti ti-bell-ringing" style="font-size:26px"></i><div><div style="font-weight:600">Pause vorbei, weiter geht's</div><div style="font-size:13px">${nextLabel()}</div></div></div>`;
     }
     act.x.forEach((y,i) => {
       const p=prev(y.e), g=sug(y.e,y.tr), ad=y.s.length && y.s.every(s => s.d), E=ex[y.e], bb=BB.includes(E.n);
-      o += `<div class="cd" style="${ad?'border-color:var(--border-success)':''}"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><span style="font-weight:600">${dot(E.g)}${esc(E.n)}${ad?' <i class="ti ti-circle-check" style="color:var(--text-success)"></i>':''}</span>
+      o += `<div class="cd ${cele===i?'cele':''}" style="${ad?'border-color:var(--border-success)':''}"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><span style="font-weight:600">${dot(E.g)}${esc(E.n)}${ad?' <i class="ti ti-circle-check" style="color:var(--text-success)"></i>':''}</span>
       <span class="ic"><i class="ti ti-note cl ${y.ui==='n'?'on':''}" onclick="ui(${i},'n')"></i>${bb?`<i class="ti ti-disc cl ${y.ui==='p'?'on':''}" onclick="ui(${i},'p')"></i>`:''}<i class="ti ti-replace cl ${y.ui==='s'?'on':''}" onclick="ui(${i},'s')"></i><i class="ti ti-x cl" onclick="rmEx(${i})"></i></span></div>
       <div class="mu">${y.t?'Ziel '+y.t+' · ':''}${p?'Letztes Mal '+p.map(s => nf(s.w)+'×'+s.r).join(', '):'Noch keine Werte'}</div>
       ${E.note && y.ui!=='n' ? `<div class="mu" style="margin-top:4px"><i class="ti ti-note"></i> ${esc(E.note)}</div>` : ''}
@@ -230,10 +278,11 @@ function vTrain(){
       y.s.forEach((s,j) => {
         const ps=p?p[Math.min(j,p.length-1)]:null, h=ph(i,j), cur=nu&&nu.i===i&&nu.j===j;
         const nr = j+1-y.s.slice(0,j).filter(z => z.wu).length;
-        o += `<div class="sr ${s.d?'dn':''}"><span class="cl" onclick="wu(${i},${j})" style="text-align:center;font-weight:600;${s.wu?'color:var(--text-warning)':cur?'color:var(--text-accent)':'color:var(--text-secondary)'}">${s.wu?'A':nr}</span><span class="mu">${s.wu?'Aufwärmen':ps?nf(ps.w)+' × '+ps.r:'–'}</span>
+        const fl = flash===i+'-'+j;
+        o += `<div class="sr ${s.d?'dn':''} ${fl?'fl':''}"><span class="cl" onclick="wu(${i},${j})" style="text-align:center;font-weight:600;${s.wu?'color:var(--text-warning)':cur?'color:var(--text-accent)':'color:var(--text-secondary)'}">${s.wu?'A':nr}</span><span class="mu">${s.wu?'Aufwärmen':ps?nf(ps.w)+' × '+ps.r:'–'}</span>
         <input id="iw${i}_${j}" inputmode="decimal" value="${s.w}" placeholder="${h.w!==null?nf(h.w):'kg'}" oninput="setv(${i},${j},'w',this.value)" ${cur?'style="border-color:var(--fill-accent)"':''}>
         <input id="ir${i}_${j}" inputmode="numeric" value="${s.r}" placeholder="${h.r!==null?h.r:'0'}" oninput="setv(${i},${j},'r',this.value)" ${cur?'style="border-color:var(--fill-accent)"':''}>
-        <button class="ck ${s.d?'dn':''}" onclick="tick(${i},${j})"><i class="ti ti-check" style="font-size:20px"></i></button></div>`;
+        <button class="ck ${s.d?'dn':''} ${fl?'pop':''}" onclick="tick(${i},${j})"><i class="ti ti-check" style="font-size:20px"></i></button></div>`;
         if (err===i+'-'+j) o += `<div class="er">Trag erst Gewicht und Wiederholungen ein.</div>`;
       });
       o += `<button class="bt" onclick="addSet(${i})"><i class="ti ti-plus"></i> Satz</button></div>`;
@@ -245,10 +294,10 @@ function vTrain(){
   }
   // Startseite
   const w0=wk0(), wh=hist.filter(h => h.d>=w0), np=nextPlan(), td=day0(Date.now());
-  const days = ['Mo','Di','Mi','Do','Fr','Sa','So'].map((n,k) => { const d=w0+k*864e5, h=hist.find(x => day0(x.d)===d); return {n,d,h}; });
+  const days = ['Mo','Di','Mi','Do','Fr','Sa','So'].map((n,k) => { const d=w0+k*864e5, h=hist.find(x => day0(x.d)===d); return {n,d,h,k}; });
   let streak=0; for (let k=0;k<104;k++){ const a=w0-k*7*864e5; if (hist.some(h => h.d>=a && h.d<a+7*864e5)) streak++; else if (k>0) break; }
-  let o = `<div class="cd"><div style="display:flex;justify-content:space-between;margin-bottom:8px"><span style="font-weight:600">Diese Woche</span><span class="mu"><i class="ti ti-flame"></i> ${streak} ${streak===1?'Woche':'Wochen'} am Stück</span></div><div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px;text-align:center">${days.map(x => { const g=x.h&&x.h.x.length?ex[x.h.x[0].e].g:0; return `<div><div class="mu" style="font-size:11px">${x.n}</div><div style="margin:4px auto 0;width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;${x.h?`background:${GC[g]};color:#fff`:'background:var(--bg-neutral);color:var(--text-muted)'};${x.d===td?'outline:2px solid var(--fill-accent);outline-offset:2px':''}">${x.h?esc(x.h.p.slice(0,4)):new Date(x.d).getDate()}</div></div>`; }).join('')}</div></div>`;
-  o += `<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:10px">${[['Trainings',wh.length],['Volumen',nf(Math.round(wh.reduce((a,h) => a+vol(h),0)/100)/10)+' t'],['Gesamt',hist.length]].map(m => `<div class="mt"><div class="mu" style="font-size:12px">${m[0]}</div><div style="font-weight:600;font-size:16px">${m[1]}</div></div>`).join('')}</div>`;
+  let o = `<div class="cd"><div style="display:flex;justify-content:space-between;margin-bottom:8px"><span style="font-weight:600">Diese Woche</span><span class="mu"><i class="ti ti-flame"></i> ${streak} ${streak===1?'Woche':'Wochen'} am Stück</span></div><div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px;text-align:center">${days.map(x => { const g=x.h&&x.h.x.length?ex[x.h.x[0].e].g:0; return `<div><div class="mu" style="font-size:11px">${x.n}</div><div class="dc" style="animation-delay:${.15+x.k*.05}s;margin:4px auto 0;width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;${x.h?`background:${GC[g]};color:#fff`:'background:var(--bg-neutral);color:var(--text-muted)'};${x.d===td?'outline:2px solid var(--fill-accent);outline-offset:2px':''}">${x.h?esc(x.h.p.slice(0,4)):new Date(x.d).getDate()}</div></div>`; }).join('')}</div></div>`;
+  o += `<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:10px">${[['Trainings',wh.length,'',0],['Volumen',Math.round(wh.reduce((a,h) => a+vol(h),0)/100)/10,' t',1],['Gesamt',hist.length,'',0]].map(m => `<div class="mt"><div class="mu" style="font-size:12px">${m[0]}</div><div style="font-weight:600;font-size:16px">${cu(m[1],m[2],m[3])}</div></div>`).join('')}</div>`;
   if (plans.length){
     const P=plans[np], ds=hist.filter(h => h.p===P.n).slice(-3), ad=ds.length?Math.round(ds.reduce((a,h) => a+h.dur,0)/ds.length):null;
     o += `<div class="cd" style="border:2px solid var(--border-accent)"><div class="mu">Als Nächstes dran</div><div style="font-size:24px;font-weight:600">${esc(P.n)}</div><div>${pg(P).map(tg).join('')}</div><div class="mu" style="margin-top:6px">${P.it.length} Übungen · ${P.it.reduce((a,x) => a+x.s,0)} Sätze${ad?' · ca. '+ad+' min':''}</div><button class="bt pr" onclick="start(${np})"><i class="ti ti-player-play"></i> Training starten</button></div>`;
@@ -263,11 +312,11 @@ function saveAsPlan(){ const h=sum.h; plans.push({n:'Plan '+(plans.length+1), it
 function vSum(){
   const h=sum.h, n=h.x.reduce((a,x) => a+x.s.length,0), v=vol(h), dv=sum.lv?Math.round((v/sum.lv-1)*100):null;
   const mx=Math.max(1,...h.x.map(x => x.s.reduce((a,s) => a+s.w*s.r,0)));
-  return `<div style="text-align:center;margin:10px 0 16px"><div style="width:56px;height:56px;border-radius:50%;background:var(--bg-success);color:var(--text-success);display:flex;align-items:center;justify-content:center;margin:0 auto 8px"><i class="ti ti-trophy" style="font-size:26px"></i></div><div style="font-size:18px;font-weight:600">Training gespeichert</div><div class="mu">${esc(h.p)}</div></div>
-  <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px">${[['Dauer',h.dur+' min'],['Sätze',n],['Volumen',nf(v)+' kg']].map(m => `<div class="mt"><div class="mu" style="font-size:12px">${m[0]}</div><div style="font-weight:600">${m[1]}</div></div>`).join('')}</div>
+  return `<div style="text-align:center;margin:10px 0 16px"><div class="trophy" style="width:56px;height:56px;border-radius:50%;background:var(--bg-success);color:var(--text-success);display:flex;align-items:center;justify-content:center;margin:0 auto 8px"><i class="ti ti-trophy" style="font-size:26px"></i></div><div style="font-size:18px;font-weight:600">Training gespeichert</div><div class="mu">${esc(h.p)}</div></div>
+  <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px">${[['Dauer',h.dur,' min',0],['Sätze',n,'',0],['Volumen',v,' kg',1]].map(m => `<div class="mt"><div class="mu" style="font-size:12px">${m[0]}</div><div style="font-weight:600">${cu(m[1],m[2],m[3])}</div></div>`).join('')}</div>
   ${dv!==null ? `<div class="cd" style="display:flex;justify-content:space-between;align-items:center"><span>Volumen vs. letztes ${esc(h.p)}</span><span style="font-weight:600;color:${dv>=0?'var(--text-success)':'var(--text-danger)'}">${dv>=0?'+':''}${dv} %</span></div>` : ''}
   <div class="cd"><div style="font-weight:600;margin-bottom:4px">Neue Bestwerte</div>${sum.prs.length ? sum.prs.map(p => `<div style="font-size:14px;padding:3px 0"><i class="ti ti-medal" style="color:var(--text-warning)"></i> ${esc(p.n)}: <b>${nf(p.m)} kg</b> <span class="mu">(vorher ${nf(p.b)})</span></div>`).join('') : '<div class="mu">Diesmal keine.</div>'}</div>
-  <div class="cd"><div style="font-weight:600;margin-bottom:4px">Volumen pro Übung</div>${h.x.map(x => { const xv=x.s.reduce((a,s) => a+s.w*s.r,0); return `<div style="font-size:13px;margin-top:6px">${dot(ex[x.e].g)}${esc(ex[x.e].n)}<span class="mu" style="float:right">${nf(xv)} kg</span></div><div class="bar" style="margin-top:3px"><div style="width:${Math.round(xv/mx*100)}%;background:${GC[ex[x.e].g]}"></div></div>`; }).join('')}</div>
+  <div class="cd"><div style="font-weight:600;margin-bottom:4px">Volumen pro Übung</div>${h.x.map(x => { const xv=x.s.reduce((a,s) => a+s.w*s.r,0); return `<div style="font-size:13px;margin-top:6px">${dot(ex[x.e].g)}${esc(ex[x.e].n)}<span class="mu" style="float:right">${nf(xv)} kg</span></div><div class="bar" style="margin-top:3px"><div class="gw" style="width:${Math.round(xv/mx*100)}%;background:${GC[ex[x.e].g]}"></div></div>`; }).join('')}</div>
   ${h.p==='Freies Training' ? (sum.saved ? '<div class="mu" style="text-align:center">Als Plan gespeichert, du findest ihn unter Pläne.</div>' : `<button class="bt" onclick="saveAsPlan()"><i class="ti ti-device-floppy"></i> Als Plan speichern</button>`) : ''}
   <button class="bt pr" onclick="go('train')">Fertig</button>`;
 }
@@ -294,15 +343,15 @@ function vPlans(){
 function line(vals,col,w,h,lbl){
   if (vals.length<2) return '';
   const mx=Math.max(...vals), mn=Math.min(...vals), xs=i => 10+i*(w-20)/(vals.length-1), ys=v => h-10-(mx===mn?0.5:(v-mn)/(mx-mn))*(h-28);
-  return `<svg viewBox="0 0 ${w} ${h}" style="width:100%;height:auto;display:block"><polyline fill="none" stroke="${col}" stroke-width="2" points="${vals.map((v,i) => xs(i)+','+ys(v)).join(' ')}"/>${vals.map((v,i) => `<circle cx="${xs(i)}" cy="${ys(v)}" r="3.5" fill="${col}"/>`).join('')}<text x="${xs(vals.length-1)}" y="${ys(vals.at(-1))-8}" text-anchor="end" style="font-size:12px;fill:var(--text-secondary)">${lbl}</text></svg>`;
+  return `<svg viewBox="0 0 ${w} ${h}" style="width:100%;height:auto;display:block"><polyline class="ln" fill="none" stroke="${col}" stroke-width="2" points="${vals.map((v,i) => xs(i)+','+ys(v)).join(' ')}"/>${vals.map((v,i) => `<circle cx="${xs(i)}" cy="${ys(v)}" r="3.5" fill="${col}"/>`).join('')}<text x="${xs(vals.length-1)}" y="${ys(vals.at(-1))-8}" text-anchor="end" style="font-size:12px;fill:var(--text-secondary)">${lbl}</text></svg>`;
 }
 function bwAdd(){ const w=num($('bwi').value); if (w===null||w<30||w>300){ err='bw'; render(); return; } bw.push({d:Date.now(), w}); err=''; render(); }
 function vStats(){
   let o=banner();
   const w0=wk0(), wk=[5,4,3,2,1,0].map(k => { const a=w0-k*7*864e5, hs=hist.filter(h => h.d>=a && h.d<a+7*864e5); return {a, v:hs.reduce((s,h) => s+vol(h),0)}; }), mv=Math.max(1,...wk.map(x => x.v));
-  o += `<div class="cd"><div style="font-weight:600;margin-bottom:8px">Volumen pro Woche</div><div style="display:flex;align-items:flex-end;gap:8px;height:110px">${wk.map((x,k) => `<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%"><span style="font-size:11px;color:var(--text-secondary)">${x.v?nf(Math.round(x.v/100)/10)+' t':''}</span><div style="width:100%;height:${Math.round(x.v/mv*80)}px;background:${k===5?'var(--fill-accent)':'var(--bg-accent)'};border-radius:4px 4px 0 0;margin-top:3px"></div></div>`).join('')}</div><div style="display:flex;gap:8px;margin-top:4px">${wk.map((x,k) => `<span style="flex:1;text-align:center;font-size:11px;color:var(--text-muted)">${k===5?'Jetzt':new Date(x.a).toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit'})}</span>`).join('')}</div></div>`;
+  o += `<div class="cd"><div style="font-weight:600;margin-bottom:8px">Volumen pro Woche</div><div style="display:flex;align-items:flex-end;gap:8px;height:110px">${wk.map((x,k) => `<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%"><span style="font-size:11px;color:var(--text-secondary)">${x.v?nf(Math.round(x.v/100)/10)+' t':''}</span><div class="gh" style="animation-delay:${.2+k*.06}s;width:100%;height:${Math.round(x.v/mv*80)}px;background:${k===5?'var(--fill-accent)':'var(--bg-accent)'};border-radius:4px 4px 0 0;margin-top:3px"></div></div>`).join('')}</div><div style="display:flex;gap:8px;margin-top:4px">${wk.map((x,k) => `<span style="flex:1;text-align:center;font-size:11px;color:var(--text-muted)">${k===5?'Jetzt':new Date(x.a).toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit'})}</span>`).join('')}</div></div>`;
   const d7=Date.now()-7*864e5, cnt=G.map(() => 0); hist.filter(h => h.d>=d7).forEach(h => h.x.forEach(x => cnt[ex[x.e].g]+=x.s.length));
-  o += `<div class="cd"><div style="font-weight:600">Sätze pro Muskel (7 Tage)</div><div class="mu" style="margin-bottom:6px">Markierung bei 10 Sätzen, Richtwert 10–20</div>` + G.map((g,i) => `<div style="display:grid;grid-template-columns:78px 1fr 26px;gap:8px;align-items:center;font-size:13px;margin-top:7px"><span>${dot(i)}${g}</span><div style="position:relative;height:10px;background:var(--bg-neutral);border-radius:5px"><div style="height:10px;width:${Math.min(100,Math.round(cnt[i]/20*100))}%;background:${GC[i]};border-radius:5px"></div><div style="position:absolute;left:50%;top:-2px;width:1px;height:14px;background:var(--border-stronger)"></div></div><span style="text-align:right">${cnt[i]}</span></div>`).join('') + `</div>`;
+  o += `<div class="cd"><div style="font-weight:600">Sätze pro Muskel (7 Tage)</div><div class="mu" style="margin-bottom:6px">Markierung bei 10 Sätzen, Richtwert 10–20</div>` + G.map((g,i) => `<div style="display:grid;grid-template-columns:78px 1fr 26px;gap:8px;align-items:center;font-size:13px;margin-top:7px"><span>${dot(i)}${g}</span><div style="position:relative;height:10px;background:var(--bg-neutral);border-radius:5px"><div class="gw" style="animation-delay:${.2+i*.06}s;height:10px;width:${Math.min(100,Math.round(cnt[i]/20*100))}%;background:${GC[i]};border-radius:5px"></div><div style="position:absolute;left:50%;top:-2px;width:1px;height:14px;background:var(--border-stronger)"></div></div><span style="text-align:right">${cnt[i]}</span></div>`).join('') + `</div>`;
   const lb=bw.at(-1), fb=bw[0];
   o += `<div class="cd"><div style="display:flex;justify-content:space-between;align-items:baseline"><span style="font-weight:600">Körpergewicht</span><span style="font-size:20px;font-weight:600">${lb?nf(lb.w)+' kg':'–'}</span></div>${bw.length>1?`<div class="mu">${(lb.w-fb.w)<=0?'':'+'}${nf(lb.w-fb.w)} kg seit ${dt(fb.d)}</div>`:''}${line(bw.slice(-20).map(b => b.w),'#1D9E75',330,80,'')}
   <div style="display:flex;gap:6px;margin-top:8px"><input id="bwi" inputmode="decimal" placeholder="81,5" style="flex:1;min-width:0" oninput="if(err){err='';$('be').textContent=''}"><button onclick="bwAdd()">Eintragen</button></div><div class="er" id="be">${err==='bw'?'Gib ein gültiges Gewicht ein.':''}</div></div>`;
@@ -394,15 +443,79 @@ function vSet(){
 function render(){
   const T={train:act?act.p:'Training', plans:'Pläne', stats:'Fortschritt', ex:'Übungen', hist:'Verlauf', sum:'Geschafft', set:'Einstellungen'};
   $('ttl').textContent = T[tab];
-  $('v').innerHTML = tab==='train'?vTrain() : tab==='sum'?vSum() : tab==='plans'?banner()+vPlans() : tab==='stats'?vStats() : tab==='ex'?vEx() : tab==='set'?vSet() : vHist();
+  // Einblend-Animation nur, wenn man eine neue Ansicht öffnet, nicht bei jedem Abhaken
+  const key = tab+'|'+sub+'|'+(act?1:0), v=$('v'), entering = key!==lastKey;
+  v.classList.remove('enter');
+  v.innerHTML = tab==='train'?vTrain() : tab==='sum'?vSum() : tab==='plans'?banner()+vPlans() : tab==='stats'?vStats() : tab==='ex'?vEx() : tab==='set'?vSet() : vHist();
+  if (entering){ void v.offsetWidth; v.classList.add('enter'); lastKey=key; }
   document.querySelectorAll('#nav button').forEach(b => b.classList.toggle('on', b.dataset.t===tab || (tab==='sum' && b.dataset.t==='train')));
+  flash=null; cele=null; restNew=false;
+  effects(entering);
   save(); upd();
 }
+
+// Zahl, die beim Öffnen hochzählt
+function cu(val,suf,dec){ return `<span class="cu" data-v="${val}" data-s="${suf}" data-d="${dec}">${nf(val)}${suf}</span>`; }
+
+function effects(entering){
+  // Fortschrittsbalken im Training gleitet vom alten zum neuen Wert
+  const pb=$('pb');
+  if (pb){ const to=+pb.dataset.to; requestAnimationFrame(() => requestAnimationFrame(() => pb.style.width=to+'%')); lastProg=to; }
+  if (!entering || RM) return;
+  // Linien in Diagrammen werden "gezeichnet"
+  document.querySelectorAll('#v .ln').forEach(l => {
+    try { const L=l.getTotalLength(); l.style.strokeDasharray=L; l.style.strokeDashoffset=L; l.getBoundingClientRect();
+      l.style.transition='stroke-dashoffset 1.1s cubic-bezier(.4,0,.2,1) .2s'; l.style.strokeDashoffset=0; } catch(e){}
+  });
+  // Zahlen hochzählen
+  document.querySelectorAll('#v .cu').forEach(el => {
+    const t=+el.dataset.v, suf=el.dataset.s, dec=+el.dataset.d, t0=performance.now();
+    if (!t) return;
+    const f = now => { const p=Math.min(1,(now-t0)/900), e=1-Math.pow(1-p,3);
+      el.textContent = (t*e).toLocaleString('de-DE',{maximumFractionDigits:dec}) + suf; if (p<1) requestAnimationFrame(f); };
+    requestAnimationFrame(f);
+  });
+  // Konfetti bei neuen Bestwerten
+  if (tab==='sum' && sum && sum.prs.length) confetti();
+}
+
+function confetti(){
+  const cv=document.createElement('canvas'), dpr=window.devicePixelRatio||1, W=innerWidth, H=innerHeight;
+  cv.width=W*dpr; cv.height=H*dpr;
+  cv.style.cssText='position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:50';
+  document.body.appendChild(cv);
+  const c=cv.getContext('2d'); c.scale(dpr,dpr);
+  const cols=[...GC,'#EF9F27'];
+  const ps=Array.from({length:140}, () => ({x:W/2+(Math.random()-.5)*60, y:H*0.3, vx:(Math.random()-.5)*12, vy:-Math.random()*12-4,
+    s:Math.random()*6+4, r:Math.random()*6, vr:(Math.random()-.5)*.3, col:cols[Math.floor(Math.random()*cols.length)]}));
+  const t0=performance.now();
+  const f = now => {
+    const t=now-t0; c.clearRect(0,0,W,H);
+    ps.forEach(p => { p.vy+=.35; p.vx*=.99; p.x+=p.vx; p.y+=p.vy; p.r+=p.vr;
+      c.save(); c.globalAlpha=Math.max(0,1-t/2800); c.translate(p.x,p.y); c.rotate(p.r); c.fillStyle=p.col; c.fillRect(-p.s/2,-p.s/4,p.s,p.s/2); c.restore(); });
+    if (t<2800) requestAnimationFrame(f); else cv.remove();
+  };
+  requestAnimationFrame(f);
+}
+
 // läuft jede Sekunde: Trainingsuhr und Pausenring
 function upd(){
   $('clk').innerHTML = act ? '<i class="ti ti-clock"></i> '+mm((Date.now()-act.t0)/1000) : '';
   const r=$('rt');
-  if (r){ const rem=(rest-Date.now())/1000; if (rem>0){ r.textContent=mm(rem); $('rr').setAttribute('stroke-dashoffset', C*(1-rem/REST)); } else { rest=0; render(); } }
+  if (r){
+    const rem=(rest-Date.now())/1000;
+    if (rem>0){
+      r.textContent=mm(rem);
+      const rr=$('rr'); rr.setAttribute('stroke-dashoffset', C*(1-rem/REST));
+      // letzte 10 Sekunden: Ring wird orange und pulsiert
+      const hot=rem<=10; rr.setAttribute('stroke', hot?'#EF9F27':'#378ADD'); $('rs').classList.toggle('hot', hot);
+    } else {
+      rest=0; restDone=Date.now();
+      if (navigator.vibrate) navigator.vibrate([200,100,200]);   // klappt nur auf Android
+      render();
+      setTimeout(() => { if (tab==='train' && act) render(); }, 4100);
+    }
+  }
 }
 setInterval(upd, 1000);
 // Beim Zurückkehren in die App sofort aktualisieren
